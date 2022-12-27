@@ -108,10 +108,10 @@ class BaseIMNet3d(nn.Module):
         else: # not body_centric_encoding
             point_local_feat = points_nc3d
 
-        if self.embedder is not None:
+        if self.embedder is not None: # sin cos multiple freq combine as embeding
             point_local_feat = self.embedder(point_local_feat.permute(0,2,1)).permute(0,2,1)
 
-        if self.global_feat is not None:
+        if self.global_feat is not None:  # global_feat is a embeding for decoder, not shared by scan models
             point_local_feat = torch.cat([point_local_feat, self.global_feat[:,:,None].expand(-1,-1,N)], 1)
 
         w0 = 30.0 if self.opt['mlp']['nlactiv'] == 'sin' else 1.0

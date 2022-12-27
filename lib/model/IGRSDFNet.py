@@ -116,15 +116,15 @@ class IGRSDFNet(BaseIMNet3d):
         else:
             point_local_feat = points_nc3d
         
-        if self.embedder is not None:
+        if self.embedder is not None:# dim: 3->27
             point_local_feat = self.embedder(point_local_feat.permute(0,2,1)).permute(0,2,1)
 
         if self.global_feat is not None:
             global_feat = self.global_feat[:,:,None].expand(-1,-1,N)
-            point_local_feat = torch.cat([point_local_feat, global_feat], 1)
+            point_local_feat = torch.cat([point_local_feat, global_feat], 1)  # 27(coord embedding) + 64(implicit decoder embedding) =91
 
         if self.pose_feat is not None:
-            if self.lbs_net is not None:
+            if self.lbs_net is not None: # 23*4=92
                 pose_feat = self.pose_feat.view(self.pose_feat.size(0),-1,self.opt['pose_dim'],1) * lbs[:,:,None]
                 # Use entire feature
                 if 'full_pose' in self.opt.keys():
@@ -209,7 +209,7 @@ class IGRSDFNet(BaseIMNet3d):
                     pose_feat = pose_feat.reshape(pose_feat.size(0),-1,N)
                 else:
                     pose_feat = self.pose_feat[:,:,None].expand(-1,-1,N)
-                point_local_feat = torch.cat([point_local_feat, pose_feat], 1)
+                point_local_feat = torch.cat([point_local_feat, pose_feat], 1) # equation (18)
 
             w0 = 30.0 if self.opt['mlp']['nlactiv'] == 'sin' else 1.0
 
@@ -272,8 +272,8 @@ class IGRSDFNet(BaseIMNet3d):
         args:
             feat: (B, C, D, H, W)
             pts_surface: (B, 3, N)
-            pts_body: (B, 3, N*)
-            pts_bbox: (B, 3, N**)
+            pts_body: (B, 3, N*)    scan 和 smpl surface 周围的点
+            pts_bbox: (B, 3, N**)  方形空间的均匀分布点
             normals: (B, 3, N)
         '''
         # set volumetric feature
@@ -283,7 +283,7 @@ class IGRSDFNet(BaseIMNet3d):
                                                         return_pred=True,
                                                         custom_index=True,
                                                         update_lbs=True,
-                                                        bmin=bmin, bmax=bmax)
+                                                        bmin=bmin, bmax=bmax) # # equation (18) sdf_surface 是 igr 的推理结果
         if self.bbox_regularization:
             with torch.no_grad():
                 bbox_xmin = pts_bbox[:,:,:self.opt['n_bound']].clone()
@@ -298,11 +298,11 @@ class IGRSDFNet(BaseIMNet3d):
                 bbox_ymax[:, 1] = self.bbox_max[0,1,0]
                 bbox_zmax = pts_bbox[:,:,:self.opt['n_bound']].clone()
                 bbox_zmax[:, 2] = self.bbox_max[0,2,0]
-
+                # 6 sides of a cube
                 pts_bound = torch.cat([bbox_xmin, bbox_ymin, bbox_zmin, bbox_xmax, bbox_ymax, bbox_zmax],-1)
-
-            sdf_bound = self.query(pts_bound, bmin=bmin, bmax=bmax)
-
+            # 6 sides of a cube 的 sdf 值
+            sdf_bound = self.query(pts_bound, bmin=bmin, bmax=bmax) # equation (18)
+        # 形状边缘点 + 空间均匀点
         pts_igr = torch.cat([pts_body, pts_bbox], 2)
         nml_igr, sdf_igr = self.compute_normal(points=pts_igr,
                                                normalize=False,

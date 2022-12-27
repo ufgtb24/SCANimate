@@ -39,6 +39,9 @@ import time
 import trimesh
 from tqdm import tqdm
 
+from smpl.smpl import create
+
+
 def gen_train_color_mesh(opt, result_dir, fwd_skin_net, inv_skin_net, lat_vecs_inv_skin, model, smpl_vitruvian, train_data_loader, cuda, name='', reference_body_v=None):
     dataset = train_data_loader.dataset
     smpl_face = torch.LongTensor(model.faces[:,[0,2,1]].astype(np.int32))[None].to(cuda)
@@ -339,7 +342,7 @@ def train(opt):
             print('error: ckpt does not exist [%s]' % model_path)
 
 
-    model = smpl.create(opt['data']['smpl_dir'], model_type='smpl_vitruvian',
+    model = create(opt['data']['smpl_dir'], model_type='smpl_vitruvian',
                          gender=opt['data']['smpl_gender'], use_face_contour=False,
                          ext='npz').to(cuda)
 
@@ -470,4 +473,7 @@ def trainWrapper(args=None):
     train(opt)
 
 if __name__ == '__main__':
+    print(f'train_color pid : {os.getpid()}')
+    input()
+
     trainWrapper()

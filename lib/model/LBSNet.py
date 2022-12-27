@@ -43,7 +43,7 @@ class LBSNet(BaseIMNet3d):
             errLBS_SCAN = self.opt['lambda_scan'] * (res['pred_lbs_scan_%s' % self.source_space]-res['reference_lbs_scan_%s' % self.source_space]).pow(2).mean()
             err_dict['SW-SCAN/%s' % self.source_space[0]] = errLBS_SCAN.item()
             error += errLBS_SCAN
-        if 'pred_smpl_posed' in res and 'gt_smpl_posed' in res:
+        if 'pred_smpl_posed' in res and 'gt_smpl_posed' in res: # inv sep
             errCyc_SMPL = self.opt['lambda_cyc_smpl'] * (res['pred_smpl_posed'] - res['gt_smpl_posed']).abs().mean()
             err_dict['Cy-SMPL'] = errCyc_SMPL.item()
             error += errCyc_SMPL

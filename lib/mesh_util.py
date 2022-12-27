@@ -336,7 +336,7 @@ def reconstruction(net, cuda, calib_tensor,
 
     # Then we evaluate the grid    
     max_level = int(math.log2(resolution))
-    sdf = eval_progressive(batch_eval, 4, max_level, cuda, b_min, b_max, thresh)
+    sdf = eval_progressive(batch_eval, 4, max_level, cuda, b_min, b_max, thresh) # calculate occupy of voxel grid
 
     # calculate matrix
     mat = np.eye(4)
@@ -362,7 +362,7 @@ def reconstruction(net, cuda, calib_tensor,
     if color_flag:
         torch_verts = torch.Tensor(verts).unsqueeze(0).permute(0,2,1).to(cuda)
 
-        with torch.no_grad():
+        with torch.no_grad():  # point_local_feat 代表局部卷积+姿态编码
             _, last_layer_feature, point_local_feat = net.query(torch_verts, calib_tensor, return_last_layer_feature=True)
             vertex_colors = texture_net.query(point_local_feat, last_layer_feature)
             vertex_colors = vertex_colors.squeeze(0).permute(1,0).detach().cpu().numpy()
@@ -420,7 +420,7 @@ def eval_progressive(batch_eval, min_level, max_level, cuda, b_min, b_max, thres
 
                 coords_accum *= 2
 
-                is_boundary = (valid > 0.0) & (valid < 1.0)
+                is_boundary = (valid > 0.0) & (valid < 1.0)  # not zero means boundary
                 is_boundary = smooth_conv3x3(is_boundary.float().view(1, 1, *is_boundary.size()))[0, 0] > 0
 
                 is_boundary[coords_accum[:, 0], coords_accum[:, 1], coords_accum[:, 2]] = False

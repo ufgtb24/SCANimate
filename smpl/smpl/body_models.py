@@ -683,10 +683,10 @@ class SMPL_vitruvian(nn.Module):
                 body_neutral_v = body_neutral_v,
                 dtype=self.dtype, custom_out=True)
         vitruvian_vertices = ret['verts']
-        vitruvian_joints = ret['joints']
-        vitruvian_vertices_transform = ret['vT']
+        vitruvian_joints = ret['joints'] # joint location
+        vitruvian_vertices_transform = ret['vT']  # vertices transformation rel to root joint
         _, vitruvian_joints_transform = self.vertex_joint_selector(vitruvian_vertices, vitruvian_joints, True, ret['vT'], ret['jT'])
-        
+        # add face or other part's joint transform
         self.vitruvian_vertices_transform = vitruvian_vertices_transform.detach()
         self.vitruvian_joints_transform = vitruvian_joints_transform.detach()
         self.vitruvian_vertices = vitruvian_vertices.detach()

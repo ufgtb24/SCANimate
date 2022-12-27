@@ -33,6 +33,9 @@ import math
 from apps.train_scanimate import gen_mesh2
 
 import logging
+
+from smpl.smpl import create
+
 logging.basicConfig(level=logging.DEBUG)
 
 def test(opt, test_input_dir):
@@ -50,7 +53,7 @@ def test(opt, test_input_dir):
     result_dir = '%s_test/%s_test_%s' % (opt['experiment']['result_dir'], exp_name, test_input_basedir)
     os.makedirs(result_dir, exist_ok=True)
 
-    model = smpl.create(opt['data']['smpl_dir'], model_type='smpl_vitruvian',
+    model = create(opt['data']['smpl_dir'], model_type='smpl_vitruvian',
                          gender=opt['data']['smpl_gender'], use_face_contour=False,
                          ext='npz').to(cuda)
 
@@ -164,4 +167,7 @@ def testWrapper(args=None):
     test(opt, args.test_dir)
 
 if __name__ == '__main__':
+    print(f'test_scanimate pid : {os.getpid()}')
+    input()
+
     testWrapper()

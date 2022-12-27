@@ -36,11 +36,14 @@ from lib.model.LBSNet import LBSNet
 from lib.data.CapeDataset import CapeDataset_scan
 
 import logging
+
+from smpl.smpl import create
+
 logging.basicConfig(level=logging.DEBUG)
 
 def gen_mesh1(opt, result_dir, fwd_skin_net, inv_skin_net, lat_vecs_inv_skin, 
             model, smpl_vitruvian, train_data_loader, 
-            cuda, name='', reference_body_v=None, every_n_frame=10):
+            cuda, name='', reference_body_v=None, every_n_frame=10):# 没有 reconstruction
 
     dataset = train_data_loader.dataset
     smpl_face = torch.LongTensor(model.faces[:,[0,2,1]].astype(np.int32))[None].to(cuda)
@@ -74,7 +77,7 @@ def gen_mesh1(opt, result_dir, fwd_skin_net, inv_skin_net, lat_vecs_inv_skin,
         bmin -= offset
         jT = output.joint_transform[:,:24]
         smpl_n_posed = compute_normal_v(smpl_posed, smpl_face.expand(smpl_posed.shape[0],-1,-1))
-
+        # 旋转到标准方向
         scan_posed = torch.einsum('bst,bvt->bsv', torch.inverse(rootT), homogenize(scan_posed))[:,:3,:] # remove root transform
 
         if name == '_pt2':
@@ -113,7 +116,7 @@ def gen_mesh1(opt, result_dir, fwd_skin_net, inv_skin_net, lat_vecs_inv_skin,
         
         feat3d_cano = None
         pred_scan_reposed = fwd_skin_net(feat3d_cano, pred_scan_cano.permute(0,2,1), jT=jT)['pred_smpl_posed'].permute(0,2,1)
-
+        # recover original root transformation
         pred_scan_reposed = torch.einsum('bst,bvt->bvs', rootT, homogenize(pred_scan_reposed))[0,:,:3]
         
         save_obj_mesh('%s/%spred_scan_reposed%s%s.obj' % (result_dir, frame_names, str(idx).zfill(4), name), pred_scan_reposed.cpu().numpy(), faces)
@@ -129,7 +132,7 @@ def gen_mesh1(opt, result_dir, fwd_skin_net, inv_skin_net, lat_vecs_inv_skin,
    
 def gen_mesh2(opt, result_dir, igr_net, fwd_skin_net, lat_vecs_igr,
                 model, smpl_vitruvian, test_data_loader, cuda, 
-                reference_body_v=None, every_n_frame = 1):
+                reference_body_v=None, every_n_frame = 1): # generate input from gridmesh, to inject igr
     bbox_min = igr_net.bbox_min.squeeze().cpu().numpy()
     bbox_max = igr_net.bbox_max.squeeze().cpu().numpy()
 
@@ -231,7 +234,7 @@ def pretrain_skinning_net(opt, result_dir, fwd_skin_net, inv_skin_net, lat_vecs_
 
             # Get rid of global rotation from posed scans
             scan_posed = torch.einsum('bst,bvt->bvs', inv_rootT, homogenize(scan_posed))[:,:,:3]
-            
+            # get lbs of nearest point on smpl, as lbs of scan body
             reference_lbs_scan = compute_knn_feat(scan_posed, smpl_posed, gt_lbs_smpl.expand(scan_posed.shape[0],-1,-1).permute(0,2,1))[:,:,0].permute(0,2,1)
             scan_posed = scan_posed.permute(0,2,1)
 
@@ -390,7 +393,7 @@ def train_igr(opt, ckpt_dir, result_dir, igr_net, fwd_skin_net, inv_skin_net,
     optimizer = torch.optim.Adam([{
             "params": igr_net.parameters(),
             "lr": opt['training']['lr_sdf']},{
-            "params": lat_vecs_igr.parameters(),
+            "params": lat_vecs_igr.parameters(), # need train
             "lr": 0.1*opt['training']['lr_sdf']}])
     if opt['training']['continue_train'] and not optimizer_state == None:
         optimizer.load_state_dict(optimizer_state)
@@ -470,7 +473,7 @@ def train_igr(opt, ckpt_dir, result_dir, igr_net, fwd_skin_net, inv_skin_net,
             body_verts = torch.cat([scan_verts, smpl_verts], -1)
             body_rand = body_verts + torch.normal(torch.zeros_like(body_verts), opt['data']['sigma_body'])
             bbox_rand = torch.rand_like(body_rand[:,:,:opt['data']['num_sample_bbox_igr']]) * (igr_net.bbox_max - igr_net.bbox_min) + igr_net.bbox_min
-
+            
             smpl_cano_n = compute_normal_v(smpl_cano.permute(0,2,1), smpl_face.expand(smpl_posed.shape[0],-1,-1)).permute(0,2,1)
             smpl_neutral_n = compute_normal_v(smpl_neutral.permute(0,2,1), smpl_face.expand(smpl_posed.shape[0],-1,-1)).permute(0,2,1)
             scan_cano, normal_cano = replace_hands_feet(scan_cano, normal_cano, smpl_neutral, smpl_neutral_n, opt['data']['num_sample_surf'], vitruvian_angle = model.vitruvian_angle)
@@ -547,12 +550,12 @@ def train(opt):
     # Initialize vitruvian SMPL model
     if 'vitruvian_angle' not in opt['data']:
         opt['data']['vitruvian_angle'] = 25
-
-    model = smpl.create(opt['data']['smpl_dir'], model_type='smpl_vitruvian',
+    # 实例化 smpl 对象
+    model = create(opt['data']['smpl_dir'], model_type='smpl_vitruvian',
                          gender=opt['data']['smpl_gender'], use_face_contour=False,
                          ext='npz').to(cuda)
 
-    # Initialize dataset
+    # Initialize dataset,  填充用于存储扫描或
     train_dataset = CapeDataset_scan(opt['data'], phase='train', smpl=model, 
                                     device=cuda)
     test_dataset = CapeDataset_scan(opt['data'], phase='test', smpl=model,  
@@ -746,4 +749,7 @@ def trainWrapper(args=None):
     train(opt)
 
 if __name__ == '__main__':
+    print(f'train_scanimate pid : {os.getpid()}')
+    input()
+
     trainWrapper()

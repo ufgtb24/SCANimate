@@ -178,7 +178,7 @@ def lbs(betas, pose, v_template, shapedirs, posedirs, J_regressor, parents,
             The joints of the model
     '''
 
-    batch_size = max(betas.shape[0], pose.shape[0])
+    batch_size = max(betas.shape[0], pose.shape[0]) # pose is rotation, J is rotation
     device = betas.device
 
     # Add shape contribution
@@ -187,8 +187,8 @@ def lbs(betas, pose, v_template, shapedirs, posedirs, J_regressor, parents,
     if not body_neutral_v == None:
         v_shaped = body_neutral_v
 
-    # Get the joints
-    # NxJx3 array
+    # Get the joints from vertice and J-regressor
+    # NxJx3 array  J is location
     J = vertices2joints(J_regressor, v_shaped)
 
     # 3. Add pose blend shapes
@@ -210,7 +210,7 @@ def lbs(betas, pose, v_template, shapedirs, posedirs, J_regressor, parents,
                                     posedirs).view(batch_size, -1, 3)
 
     v_posed = pose_offsets + v_shaped
-    # 4. Get the global joint location
+    # 4. Get the global joint location and transform
     J_transformed, A = batch_rigid_transform(rot_mats, J, parents, dtype=dtype)
 
     # 5. Do skinning:
@@ -218,6 +218,8 @@ def lbs(betas, pose, v_template, shapedirs, posedirs, J_regressor, parents,
     W = lbs_weights.unsqueeze(dim=0).expand([batch_size, -1, -1])
     # (N x V x (J + 1)) x (N x (J + 1) x 16)
     num_joints = J_regressor.shape[0]
+    # A: joints transformation rel to root joint
+    # T: vertices transformation rel to root joint
     T = torch.matmul(W, A.view(batch_size, num_joints, 16)) \
         .view(batch_size, -1, 4, 4)
 
@@ -227,11 +229,11 @@ def lbs(betas, pose, v_template, shapedirs, posedirs, J_regressor, parents,
     v_homo = torch.matmul(T, torch.unsqueeze(v_posed_homo, dim=-1))
 
     verts = v_homo[:, :, :3, 0]
-
+    # J_transformed: locations of Joints
     ret = {'verts': verts, 'joints': J_transformed}
     if custom_out: 
-        ret['vT'] = T
-        ret['jT'] = A
+        ret['vT'] = T  # T: vertices transformation rel to root joint
+        ret['jT'] = A  # A: joints transformation rel to root joint
         ret['v_shaped'] = v_shaped
         ret['v_posed'] = v_posed
     return ret

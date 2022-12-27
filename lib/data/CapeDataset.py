@@ -119,7 +119,7 @@ class CapeDataset_scan(Dataset): # Single subject under data directory!
                     logging.error("minimal body file not found! %s", customized_minimal_ply)
                     exit()
                 self.subjects_minimal_v, self.Tpose_minimal_v = self.get_subjects_minimal(minimal_body_mesh_file[0])
-        else: # train
+        else: # train 读取扫描npz对应的 smpl，创建 vpose 作为对 tpose 的微调，只用 T-pose, 没用V-pose
             self.subjects_minimal_v, self.Tpose_minimal_v = self.get_subjects_minimal()
         self.subjects_minimal_v = torch.Tensor(self.subjects_minimal_v).float().unsqueeze(0).to(self.device)
         self.Tpose_minimal_v = torch.Tensor(self.Tpose_minimal_v).float().unsqueeze(0).to(self.device)
@@ -130,7 +130,7 @@ class CapeDataset_scan(Dataset): # Single subject under data directory!
 
         if 'frame_ratio' in self.opt:
             self.pkl_data = self.collect_data(self.opt['frame_ratio'])
-        else:
+        else: # 读取 train 中用到的closed human扫描文件npz，来自CAPE, 最终不用这个容器，而是用下文的 pkl_data_list
             self.pkl_data = self.collect_data()
 
         pkl_data_list = [] # for SMPL body paras
@@ -158,21 +158,21 @@ class CapeDataset_scan(Dataset): # Single subject under data directory!
         self.pkl_data_list = pkl_data_list
         self.data_id_list = data_ids
         if self.g_mesh_dic is None and self.is_train:
-            logging.info('loading meshes')
+            logging.info('loading meshes') # 读取训练集的扫描文件，加入全局列表
             self.g_mesh_dic = load_trimesh(ply_data_list, ground_level = self.ground_level)
             self.g_flag_tri = self.compute_convex()
 
         self.g_sample_dic = {}
         self.resample_flag = True
-        self.smpl_processing = smpl_processing
+        self.smpl_processing = smpl_processing  # 读取 estimated smpl of scan for pose
         if self.smpl_processing:
-            self.smpl_process()
+            self.smpl_process() # 用 param 生成 scan 模型对应的 smpl 模型, 并加入全局列表
 
     def smpl_process(self):
         self.g_smpl_data_dic = {}
         logging.info('Processing smpl para to smpl data...')
-
-        for pkl_file in tqdm(self.pkl_data_list):
+        
+        for pkl_file in tqdm(self.pkl_data_list): # smpl param file
             ply_file = pkl_file[:-4] +'.ply'
             dic_key = ply_file.split('/')[-2].split('_')[0] + '_' + ply_file.split('/')[-1]
 
@@ -209,12 +209,12 @@ class CapeDataset_scan(Dataset): # Single subject under data directory!
             transl = transl.unsqueeze(0).to(self.device)
             global_orient = body_pose[:,:3]
             body_pose = body_pose[:,3:]
-
+            # 将 smpl param 输入 smpl.forward 推算关节位置和节点位置等信息, Tpose_minimal_v作为推算的初始值
             output = self.smpl(betas=betas, body_pose=body_pose, global_orient=0*global_orient, transl=0*transl, return_verts=True, custom_out=True,
                                 body_neutral_v = self.Tpose_minimal_v.expand(body_pose.shape[0], -1, -1))
 
             smpl_posed_joints = output.joints
-            rootT = self.smpl.get_root_T(global_orient, transl, smpl_posed_joints[:,0:1,:])
+            rootT = self.smpl.get_root_T(global_orient, transl, smpl_posed_joints[:,0:1,:]) # root 点的 global transformation
             smpl_neutral = output.v_shaped
             smpl_cano = output.v_posed.permute(0,2,1)
             smpl_posed = output.vertices.contiguous()
@@ -255,7 +255,7 @@ class CapeDataset_scan(Dataset): # Single subject under data directory!
                 files = sorted([f for f in os.listdir(self.root) if '.ply' in f])
                 T_pose_mesh = trimesh.load(os.path.join(self.root, files[0]), process=False)
                 logging.info('Loading minimally dressed body shape mesh ' + os.path.join(self.root, files[0]))
-
+            # 获得由 tpose 到 vitravian 的正向逆向 tranform ，以及 vitravian 的 vertex location
             vitruvian_vertices = self.smpl.initiate_vitruvian(device = self.device, 
                         body_neutral_v = torch.tensor(T_pose_mesh.vertices).float().unsqueeze(0).to(self.device)).detach().clone().cpu().numpy()[0]
             return vitruvian_vertices, T_pose_mesh.vertices
@@ -266,7 +266,7 @@ class CapeDataset_scan(Dataset): # Single subject under data directory!
         for sub in self.subjects:
             if self.is_train:
                 data[sub] = sorted([f for f in os.listdir(os.path.join(self.root, sub)) if '.pkl' in f and os.path.isfile(os.path.join(self.root, sub, f[:-4]+'.ply'))])
-                if len(data[sub]) == 0:
+                if len(data[sub]) == 0: # npz 加入 data,  ply 是形状，npz 是配置
                     data[sub] = sorted([f for f in os.listdir(os.path.join(self.root, sub)) if '.npz' in f and os.path.isfile(os.path.join(self.root, sub, f[:-4]+'.ply'))])
                     data[sub] = sorted([f for f in os.listdir(os.path.join(self.root, sub)) if '.npz' in f])
             else:
