@@ -294,6 +294,70 @@ def build_smooth_conv3D(in_channels=1, out_channels=1, kernel_size=3, padding=1)
     smooth_conv.bias.data = torch.zeros(out_channels)
     return smooth_conv
 
+def cal_sdf(net, cuda, calib_tensor,
+                   resolution,thresh=0.5):
+    b_min=net.bbox_min.squeeze().cpu().numpy()
+    b_max=net.bbox_max.squeeze().cpu().numpy()
+    
+    def eval_func(points):
+        samples = points.unsqueeze(0)
+        pred = net.query(samples, calib_tensor)[0][0]
+        return pred
+
+    def batch_eval(points, num_samples=4096):
+        num_pts = points.shape[1]
+        sdf = []
+        num_batches = num_pts // num_samples
+        for i in range(num_batches):
+            sdf.append(
+                eval_func(points[:, i * num_samples:i * num_samples + num_samples])
+            )
+        if num_pts % num_samples:
+            sdf.append(
+                eval_func(points[:, num_batches * num_samples:])
+            )
+        if num_pts == 0:
+            return None
+        sdf = torch.cat(sdf)
+        return sdf
+
+    # Then we evaluate the grid
+    max_level = int(math.log2(resolution))
+    sdf = eval_progressive(batch_eval, 4, max_level, cuda, b_min, b_max, thresh) # calculate occupy of voxel grid
+    return sdf
+
+def gen_texture(net,verts,cuda,calib_tensor,texture_net):
+    torch_verts = torch.Tensor(verts).unsqueeze(0).permute(0,2,1).to(cuda)
+
+    with torch.no_grad():  # point_local_feat 代表局部卷积+姿态编码
+        _, last_layer_feature, point_local_feat = net.query(torch_verts, calib_tensor, return_last_layer_feature=True)
+        vertex_colors = texture_net.query(point_local_feat, last_layer_feature)
+        vertex_colors = vertex_colors.squeeze(0).permute(1,0).detach().cpu().numpy()
+    return vertex_colors
+
+def sdf2mesh(sdf,b_min, b_max,thresh):
+    mat = np.eye(4)
+    length = b_max - b_min
+    mat[0, 0] = length[0] / sdf.shape[0]
+    mat[1, 1] = length[1] / sdf.shape[1]
+    mat[2, 2] = length[2] / sdf.shape[2]
+    mat[0:3, 3] = b_min
+
+    # Finally we do marching cubes
+    try:
+        verts, faces, normals, values = measure.marching_cubes(sdf, thresh, gradient_direction='ascent')
+    except:
+        print('error cannot marching cubes')
+        return -1
+
+    # transform verts into world coordinate system
+    verts = np.matmul(mat[:3, :3], verts.T) + mat[:3, 3:4]
+    verts = verts.T
+    if np.linalg.det(mat) > 0:
+        faces = faces[:,[0,2,1]]
+    return verts, faces, normals, values
+
+
 def reconstruction(net, cuda, calib_tensor,
                    resolution, b_min, b_max,
                    use_octree=False, num_samples=10000, transform=None, thresh=0.5, texture_net = None):
@@ -347,7 +411,7 @@ def reconstruction(net, cuda, calib_tensor,
     mat[0:3, 3] = b_min
 
     # Finally we do marching cubes
-    try:
+    try: # https://zhuanlan.zhihu.com/p/561731427
         verts, faces, normals, values = measure.marching_cubes(sdf, thresh, gradient_direction='ascent')
     except:
         print('error cannot marching cubes')
@@ -398,8 +462,8 @@ def eval_progressive(batch_eval, min_level, max_level, cuda, b_min, b_max, thres
             resolution = 2**step + 1
             stride = 2**(steps[-1]-step)
 
-            if step == steps[0]:
-                coords2D = coords.float() / (2**steps[-1]+1) * (b_max - b_min) + b_min
+            if step == steps[0]: #
+                coords2D = coords.float() / (2**steps[-1]+1) * (b_max - b_min) + b_min  # 创建一个刚好包含实际大小的三维矩形空间，作为 gridmesh 坐标
                 sdf_all = batch_eval(
                     coords2D.t(),
                 ).view(resolution, resolution, resolution)
@@ -426,8 +490,8 @@ def eval_progressive(batch_eval, min_level, max_level, cuda, b_min, b_max, thres
                 is_boundary[coords_accum[:, 0], coords_accum[:, 1], coords_accum[:, 2]] = False
 
                 # coords = is_boundary.nonzero() * stride
-                coords = torch.nonzero(is_boundary) * stride
-                coords2D = coords.float() / (2**steps[-1]+1) * (b_max - b_min) + b_min
+                coords = torch.nonzero(is_boundary) * stride   # 索引坐标
+                coords2D = coords.float() / (2**steps[-1]+1) * (b_max - b_min) + b_min   # 空间位置坐标
                 # coords2D = coords.float() / (2**steps[-1]+1)
                 sdf = batch_eval(
                     coords2D.t(), 

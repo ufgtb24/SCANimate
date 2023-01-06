@@ -116,7 +116,7 @@ class IGRSDFNet(BaseIMNet3d):
         else:
             point_local_feat = points_nc3d
         
-        if self.embedder is not None:# dim: 3->27
+        if self.embedder is not None:# dim: 3->27 不同频率的 sin cos combine
             point_local_feat = self.embedder(point_local_feat.permute(0,2,1)).permute(0,2,1)
 
         if self.global_feat is not None:
@@ -124,7 +124,7 @@ class IGRSDFNet(BaseIMNet3d):
             point_local_feat = torch.cat([point_local_feat, global_feat], 1)  # 27(coord embedding) + 64(implicit decoder embedding) =91
 
         if self.pose_feat is not None:
-            if self.lbs_net is not None: # 23*4=92
+            if self.lbs_net is not None: # 23*4=92  (18)中 Wg*theta
                 pose_feat = self.pose_feat.view(self.pose_feat.size(0),-1,self.opt['pose_dim'],1) * lbs[:,:,None]
                 # Use entire feature
                 if 'full_pose' in self.opt.keys():
@@ -199,7 +199,7 @@ class IGRSDFNet(BaseIMNet3d):
                 point_local_feat = torch.cat([point_local_feat, global_feat], 1)
 
             if self.pose_feat is not None:
-                if self.lbs_net is not None:
+                if self.lbs_net is not None: # attention pose feat
                     pose_feat = self.pose_feat.view(self.pose_feat.size(0),-1,self.opt['pose_dim'],1) * lbs[:,:,None]
                     # Use entire feature
                     if 'full_pose' in self.opt.keys():

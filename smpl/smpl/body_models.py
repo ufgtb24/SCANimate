@@ -675,7 +675,7 @@ class SMPL_vitruvian(nn.Module):
         if betas.shape[0] != batch_size:
             num_repeats = int(batch_size / betas.shape[0])
             betas = betas.expand(num_repeats, -1)
-
+        # v_template 用不上，因为有 body_neutral_v
         ret = lbs(betas, full_pose, self.v_template,
                 self.shapedirs, self.posedirs,
                 self.J_regressor, self.parents,

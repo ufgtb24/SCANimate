@@ -328,7 +328,8 @@ class CapeDataset_scan(Dataset): # Single subject under data directory!
             faces = torch.LongTensor(faces)[None].to(self.device)
 
             convex = (-computeMeanCurvature(samples, normals, faces)[:,:,0]) < 0.2
-            flag = convex[0,faces[0,:,0]] & convex[0,faces[0,:,1]] & convex[0,faces[0,:,2]]
+            # face is convex when 3 vetex are all convex
+            flag = convex[0,faces[0,:,0]] & convex[0,faces[0,:,1]] & convex[0,faces[0,:,2]]# face is convex when 3 vetex are all convex
             flag_tri[k] = flag.cpu()
 
         return flag_tri
@@ -488,7 +489,9 @@ class CapeDataset_scan(Dataset): # Single subject under data directory!
 
             tri_id = torch.randperm(faces_cape.shape[0])[:self.opt['num_sample_edge']]
             faces_select = faces_cape[tri_id]
+            # face 的3点坐标
             tri_samples_cape = samples_cape[faces_select].permute(2,0,1).view(3,-1) # (xyz, F, 3)
+            # face 是否为 convex
             flag = flag[tri_id].float()
             w_tri = flag + 0.0 * (1.0-flag)
 

@@ -238,15 +238,15 @@ def train_color(opt, ckpt_dir, result_dir, texture_net, igr_net, fwd_skin_net, i
                 pts0 = scan_cano[0].detach().cpu().permute(1,0).numpy()
                 clr0 = scan_color[0].detach().cpu().permute(1,0).numpy()
                 clr0 = train_data['colors'][0,:,:].detach().cpu().numpy()
-
+ 
                 scan_cano, scan_color = replace_hands_feet_wcolor(scan_cano, 
                                                     scan_color, smpl_neutral, 
                                                     opt['data']['num_sample_surf'], 
                                                     vitruvian_angle = model.vitruvian_angle)
-
+                # last_layer_feature, point_local_feat 分别是输出的(抽象一些)和输入的（具体一些）scan点信息
                 sdf, last_layer_feature, point_local_feat = igr_net.query(scan_cano, return_last_layer_feature=True)  
                 
-
+            # texture_net 训练的是 cano space 的 采样点feature 到 颜色 的映射
             err, err_dict = texture_net(point_local_feat, last_layer_feature, scan_color)
 
             err_dict['All'] = err.item()
@@ -285,11 +285,13 @@ def train_color(opt, ckpt_dir, result_dir, texture_net, igr_net, fwd_skin_net, i
             if n_iter == 0:
                 train_data_loader.dataset.is_train = False
                 texture_net.eval()
+                # 保存 colored pred_scan_cano mesh, 未经过 igr 和 texture_net
                 gen_train_color_mesh(opt, result_dir, fwd_skin_net, inv_skin_net, lat_vecs_inv_skin, model, smpl_vitruvian, train_data_loader, cuda, '_pt3', reference_body_v=train_data_loader.dataset.Tpose_minimal_v)
                 train_data_loader.dataset.is_train = True
            
             if (n_iter+1) % opt['training']['freq_mesh'] == 0 or (epoch == opt['training']['num_epoch_sdf']-1 and train_idx == max_train_idx):
                 texture_net.eval()
+                # 经过 igr 和 texture_net 生成 color，可以融合多个 mesh
                 gen_color_mesh(opt, result_dir, igr_net, fwd_skin_net, lat_vecs_igr, texture_net, model, smpl_vitruvian, test_data_loader, cuda, 
                     reference_body_v=test_data_loader.dataset.Tpose_minimal_v)
 

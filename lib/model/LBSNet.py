@@ -31,19 +31,22 @@ class LBSNet(BaseIMNet3d):
         super(LBSNet, self).__init__(opt, bbox_min, bbox_max)
         self.name = 'lbs_net'
         self.source_space = 'posed' if posed else 'cano'
+        
 
+    
     def get_error(self, res):
         err_dict = {}
-        
+        # Eb
         errLBS_SMPL = self.opt['lambda_smpl'] * (res['pred_lbs_smpl_%s' % self.source_space]-res['gt_lbs_smpl']).pow(2).mean()
         err_dict['SW-SMPL/%s' % self.source_space[0]] = errLBS_SMPL.item()
         error = errLBS_SMPL
 
         if ('reference_lbs_scan_%s' % self.source_space) in res:
+            #  Es1
             errLBS_SCAN = self.opt['lambda_scan'] * (res['pred_lbs_scan_%s' % self.source_space]-res['reference_lbs_scan_%s' % self.source_space]).pow(2).mean()
             err_dict['SW-SCAN/%s' % self.source_space[0]] = errLBS_SCAN.item()
             error += errLBS_SCAN
-        if 'pred_smpl_posed' in res and 'gt_smpl_posed' in res: # inv sep
+        if 'pred_smpl_posed' in res and 'gt_smpl_posed' in res: # Ec''(posed): skin(smpl,(pred_skin_weight * j_T))
             errCyc_SMPL = self.opt['lambda_cyc_smpl'] * (res['pred_smpl_posed'] - res['gt_smpl_posed']).abs().mean()
             err_dict['Cy-SMPL'] = errCyc_SMPL.item()
             error += errCyc_SMPL
@@ -51,7 +54,7 @@ class LBSNet(BaseIMNet3d):
             errEdge = self.opt['lambda_l_edge'] * (res['w_tri'][:,None]*(1.0 - res['src_edge_%s' % self.source_space] / (res['tar_edge_%s' % self.source_space]+1e-8)).abs()).mean()
             err_dict['L-Edge'] = errEdge.item()
             error += errEdge
-        if ('pred_lbs_tri_%s' % self.source_space) in res:
+        if ('pred_lbs_tri_%s' % self.source_space) in res: # regularization Esm
             pred_lbs_tri = res['pred_lbs_tri_%s' % self.source_space]
             le1 = (pred_lbs_tri[:,:,:,0] - pred_lbs_tri[:,:,:,1]).abs().sum(1)
             le2 = (pred_lbs_tri[:,:,:,1] - pred_lbs_tri[:,:,:,2]).abs().sum(1)
@@ -59,7 +62,7 @@ class LBSNet(BaseIMNet3d):
             errEdge = self.opt['lambda_w_edge'] * (res['w_tri'] * (le1 + le2 + le3)).mean()
             err_dict['SW-Edge'] = errEdge.item()
             error += errEdge
-        if 'pred_smpl_cano' in res and 'gt_smpl_cano' in res:
+        if 'pred_smpl_cano' in res and 'gt_smpl_cano' in res: # Ec''(cano)
             errCyc_SMPL = self.opt['lambda_cyc_smpl'] * (res['pred_smpl_cano'] - res['gt_smpl_cano']).abs().mean()
             if 'Cy(SMPL)' in err_dict:
                 err_dict['Cy-SMPL'] += errCyc_SMPL.item()
@@ -75,12 +78,12 @@ class LBSNet(BaseIMNet3d):
             err_dict['SW-SCAN-Cy'] = errLBS_SCAN.item()
             error += errLBS_SCAN
 
-        if self.source_space == 'posed' and 'pred_lbs_scan_posed' in res:
+        if self.source_space == 'posed' and 'pred_lbs_scan_posed' in res:  #regularization ESp
             errSparse = self.opt['lambda_sparse'] * (res['pred_lbs_scan_posed'].abs()+1e-12).pow(self.opt['p_val']).sum(1).mean()
             err_dict['Sprs'] = errSparse.item()
             error += errSparse
 
-        if self.global_feat is not None:
+        if self.global_feat is not None: # regularization Ez
             error_lat = self.opt['lambda_lat'] * torch.norm(self.global_feat, dim=1).mean()
             err_dict['z-lbs/%s' % self.source_space[0]] = error_lat.item()
             error += error_lat

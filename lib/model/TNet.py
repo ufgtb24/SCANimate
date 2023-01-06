@@ -91,8 +91,9 @@ class TNet(nn.Module):
         return self.mlp(input_data)
 
     def forward(self, points_discription, last_layer_feature, target_color):
+        # points_discription 包含了 body_pose_feat 和 lat_vecs_igr,因此是场景 customized
         input_data = torch.cat([points_discription, last_layer_feature], 1)
-
+        # 直接将 scan 点或gridmesh点 信息拼接，输出得到color
         pred_color = self.mlp(input_data)
 
         err_dict = {}

@@ -132,7 +132,9 @@ def gen_mesh1(opt, result_dir, fwd_skin_net, inv_skin_net, lat_vecs_inv_skin,
    
 def gen_mesh2(opt, result_dir, igr_net, fwd_skin_net, lat_vecs_igr,
                 model, smpl_vitruvian, test_data_loader, cuda, 
-                reference_body_v=None, every_n_frame = 1): # generate input from gridmesh, to inject igr
+                reference_body_v=None, every_n_frame = 1):
+    # 1.cano_mesh=igr_net(gridmesh, pose_feat(from smpl_pose(from testdata)),global_feat(implicit))
+    # 2.posed_mesh=fwd_skin_net(cano_mesh, j_T(from smpl_pose(from testdata)))
     bbox_min = igr_net.bbox_min.squeeze().cpu().numpy()
     bbox_max = igr_net.bbox_max.squeeze().cpu().numpy()
 
@@ -165,7 +167,8 @@ def gen_mesh2(opt, result_dir, igr_net, fwd_skin_net, lat_vecs_igr,
             pose_feat = batch_rod2quat(body_pose.reshape(-1, 3)).view(betas.shape[0], -1, igr_net.opt['pose_dim'])
             igr_net.set_pose_feat(pose_feat)
 
-            # try:
+            # try: 不输入坐标，因为在全空间上按照分辨率采样推理，而不是随机采样
+            # verts 是点数不固定的 marching cube 重建网格,在 cano space
             verts, faces, _, _ = reconstruction(igr_net, cuda, torch.eye(4)[None].to(cuda), opt['experiment']['vol_res'], bbox_min, bbox_max, use_octree=True, thresh=0.0)
             # save_obj_mesh('%s/%s_cano%s.obj' % (result_dir, frame_names[0], str(test_idx).zfill(4)), verts, faces)
 
@@ -173,7 +176,7 @@ def gen_mesh2(opt, result_dir, igr_net, fwd_skin_net, lat_vecs_igr,
             feat3d = None
             res = fwd_skin_net(feat3d, verts_torch.permute(0,2,1), jT=jT)
             pred_lbs = res['pred_lbs_smpl_cano'].permute(0,2,1)
-            pred_scan_posed = res['pred_smpl_posed'].permute(0,2,1)
+            pred_scan_posed = res['pred_smpl_posed'].permute(0,2,1)  # 将 scan 作为 smpl 输入，提前返回
 
             rootT = test_data['rootT'].cuda()
             pred_scan_posed = torch.einsum('bst,bvt->bvs', rootT, homogenize(pred_scan_posed))[0,:,:3]
@@ -234,7 +237,7 @@ def pretrain_skinning_net(opt, result_dir, fwd_skin_net, inv_skin_net, lat_vecs_
 
             # Get rid of global rotation from posed scans
             scan_posed = torch.einsum('bst,bvt->bvs', inv_rootT, homogenize(scan_posed))[:,:,:3]
-            # get lbs of nearest point on smpl, as lbs of scan body
+            # get lbs of nearest point on smpl, as lbs of scan body (Es label)
             reference_lbs_scan = compute_knn_feat(scan_posed, smpl_posed, gt_lbs_smpl.expand(scan_posed.shape[0],-1,-1).permute(0,2,1))[:,:,0].permute(0,2,1)
             scan_posed = scan_posed.permute(0,2,1)
 
@@ -242,10 +245,10 @@ def pretrain_skinning_net(opt, result_dir, fwd_skin_net, inv_skin_net, lat_vecs_
                 lat = lat_vecs_inv_skin(f_ids) # (B, Z)
                 inv_skin_net.set_global_feat(lat)
 
-            feat3d_posed = None
+            feat3d_posed = None  # Esp Ez
             res_lbs_p, err_lbs_p, err_dict = inv_skin_net(feat3d_posed, smpl_posed.permute(0,2,1), gt_lbs_smpl, scan=scan_posed, reference_lbs_scan=None, jT=jT, bmin=bmin[:,:,None], bmax=bmax[:,:,None])#jT=jT, v_tri=scan_tri, 
             
-            feat3d_cano = None
+            feat3d_cano = None  # Es
             res_lbs_c, err_lbs_c, err_dict_lbs_c = fwd_skin_net(feat3d_cano, smpl_cano, gt_lbs_smpl, scan=res_lbs_p['pred_scan_cano'].detach(), reference_lbs_scan=reference_lbs_scan)#, jT=jT, res_posed=res_lbs_p)
             
             # Back propagation
@@ -550,7 +553,8 @@ def train(opt):
     # Initialize vitruvian SMPL model
     if 'vitruvian_angle' not in opt['data']:
         opt['data']['vitruvian_angle'] = 25
-    # 实例化 smpl 对象
+    # 1.读取 smpl 模型的固定参数，包括 lbs_weights, J_regressor等
+    # 2.初始化姿态(23*4)形状(10)状态值为默认值
     model = create(opt['data']['smpl_dir'], model_type='smpl_vitruvian',
                          gender=opt['data']['smpl_gender'], use_face_contour=False,
                          ext='npz').to(cuda)
@@ -587,9 +591,9 @@ def train(opt):
             gt_lbs_smpl[:,root] += model.lbs_weights[:,i]
             idx_list[i] = root
     gt_lbs_smpl = gt_lbs_smpl[None].permute(0,2,1)
-
+    # 用vitruvian pose(姿态)对 Tpose_minimal_v smpl 进行 skinning，输出 vitruvian smpl 的顶点 [1,6890,3]
     smpl_vitruvian = model.initiate_vitruvian(device = cuda, 
-                                            body_neutral_v = train_dataset.Tpose_minimal_v, 
+                                            body_neutral_v = train_dataset.Tpose_minimal_v,  # tpose smpl vertice [N,3]，架空 beta 的影响
                                             vitruvian_angle=opt['data']['vitruvian_angle'])
     
     # define bounding box
@@ -617,20 +621,20 @@ def train(opt):
 
     # Find checkpoints
     ckpt_dict = None
-    if opt['experiment']['ckpt_file'] is not None:
+    if opt['experiment']['ckpt_file'] is not None:  # config 中这项为空，可以自己填写，用作整体模型的 ckpt
         if os.path.isfile(opt['experiment']['ckpt_file']):
             logging.info('loading for ckpt...' + opt['experiment']['ckpt_file'])
             ckpt_dict = torch.load(opt['experiment']['ckpt_file'])
         else:
             logging.warning('ckpt does not exist [%s]' % opt['experiment']['ckpt_file'])
-    elif opt['training']['continue_train']:
-        model_path = '%s/ckpt_latest.pt' % ckpt_dir
+    elif opt['training']['continue_train']: # 未指定整体 ckpt, 但是要继续训练
+        model_path = '%s/ckpt_latest.pt' % ckpt_dir   # 优先加载默认的 igr模型
         if os.path.isfile(model_path):
             logging.info('Resuming from '+ model_path)
             ckpt_dict = torch.load(model_path)
         else:
             logging.warning('ckpt does not exist [%s]' % model_path)
-            opt['training']['use_trained_skin_nets'] = True
+            opt['training']['use_trained_skin_nets'] = True   # 加载 skin net 模型
             model_path = '%s/ckpt_trained_skin_nets.pt' % ckpt_dir
             if os.path.isfile(model_path):
                 logging.info('Resuming from ' + model_path)
@@ -638,7 +642,7 @@ def train(opt):
                 logging.info('Pretrained model loaded.')
             else:
                 logging.warning('ckpt does not exist [%s]' % model_path)
-    elif opt['training']['use_trained_skin_nets']:
+    elif opt['training']['use_trained_skin_nets']:  # 强行使用 skin net 模型，无论整体模型ckpt存在与否
         model_path = '%s/ckpt_trained_skin_nets.pt' % ckpt_dir
         if os.path.isfile(model_path):
             logging.info('Resuming from ' + model_path)
@@ -711,7 +715,7 @@ def train(opt):
             'inv_skin_net': inv_skin_net.state_dict(),
             'lat_vecs_inv_skin': lat_vecs_inv_skin.state_dict()
         }
-        torch.save(ckpt_dict, '%s/ckpt_trained_skin_nets.pt' % ckpt_dir)
+        torch.save(ckpt_dict, '%s/ckpt_trained_skin_nets.pt' % ckpt_dir)  # fwd 和 inv skin net
 
     # get only valid triangles
     train_data_loader.dataset.compute_valid_tri(inv_skin_net, model, lat_vecs_inv_skin, smpl_vitruvian)

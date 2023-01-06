@@ -13,6 +13,8 @@ data:
 experiment:
   ckpt_dir: ./demo_result/checkpoints # Where to save checkpoints and final trained models
   log_dir: ./demo_result/runs # Where to save intermediate results
+  ckpt_file:
+  #  ckpt_file: ./demo_result/checkpoints/example/ckpt_latest.pt
   name: example # Experiment name
   result_dir: ./demo_result/results # Where to save the results
   vol_res: 256 # Voxel resolution for marching cube reconstruction
@@ -96,16 +98,16 @@ model:
   posemap_type: both
 training:
   batch_size: 4
-  continue_train: true
-  freq_mesh: 1 # Output intermediate mesh results for every N iterations
+  continue_train: false
+  freq_mesh: 5 # Output intermediate mesh results for every N iterations
   freq_plot: 100 # Output training information for every N iterations
-  freq_save: 5000 # Save checkpoints for every N iterations
+  freq_save: 4 # Save checkpoints for every N iterations
   lr_pt1: 0.004 # Learning rates
   lr_pt2: 0.001
   lr_sdf: 0.004
-  num_epoch_pt1: 10 # Epoches
-  num_epoch_pt2: 10
-  num_epoch_sdf: 10
+  num_epoch_pt1: 4 # Epoches
+  num_epoch_pt2: 4
+  num_epoch_sdf: 4
   num_threads: 0
   pin_memory: false
   resample_every_n_epoch: 1 # Actively resample points at every Nth epoch

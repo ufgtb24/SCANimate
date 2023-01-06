@@ -144,7 +144,6 @@ def test(opt, test_input_dir):
 
     logging.info('Start test inference')
     igr_net.set_lbsnet(fwd_skin_net)
-
     gen_mesh2(opt, result_dir, igr_net, fwd_skin_net, lat_vecs_igr, model, smpl_vitruvian, test_data_loader, cuda, 
                     reference_body_v=test_data_loader.dataset.Tpose_minimal_v)
 
