@@ -7,7 +7,7 @@ data:
   num_sample_surf: 8000 # Number of sample points on the clothing surface
   sigma_body: 0.05 # Standard deviation controlling the sample points around the surface
   smpl_dir: ./smpl/models # The directory containing 10 PCA .pkl SMPL model
-  smpl_gender: male
+  smpl_gender: male   # template type
   test_dir: ./data/train/example_03375_shortlong # Test data directory, by default it is the same as training dir. Test directory should be additionally specified when run apps.test_scanimate
   train_ratio: 1.0 # Using different portion of training data.
 experiment:

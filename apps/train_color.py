@@ -359,8 +359,8 @@ def train(opt):
 
 
     train_data_loader = DataLoader(train_dataset,
-                                   batch_size=8, shuffle=True,#not opt['training']['serial_batch'],
-                                   num_workers=16, pin_memory=opt['training']['pin_memory'])
+                                   batch_size=opt['training']['batch_size'], shuffle=True,#not opt['training']['serial_batch'],
+                                   num_workers=opt['training']['num_threads'], pin_memory=opt['training']['pin_memory'])
     test_data_loader = DataLoader(test_dataset,
                                   batch_size=1, shuffle=False,
                                   num_workers=0, pin_memory=False)

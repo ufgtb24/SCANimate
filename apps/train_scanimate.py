@@ -44,6 +44,7 @@ logging.basicConfig(level=logging.DEBUG)
 def gen_mesh1(opt, result_dir, fwd_skin_net, inv_skin_net, lat_vecs_inv_skin, 
             model, smpl_vitruvian, train_data_loader, 
             cuda, name='', reference_body_v=None, every_n_frame=10):# 没有 reconstruction
+    # reference_body_v is T_pose
 
     dataset = train_data_loader.dataset
     smpl_face = torch.LongTensor(model.faces[:,[0,2,1]].astype(np.int32))[None].to(cuda)
@@ -327,7 +328,7 @@ def train_skinning_net(opt, result_dir, fwd_skin_net, inv_skin_net, lat_vecs_inv
             smpl_posed = smpl_data['smpl_posed'].cuda()
             smpl_n_posed = smpl_data['smpl_n_posed'].cuda()
             bmax = smpl_data['bmax'].cuda()
-            bmin = smpl_data['bmin'].cuda()
+            bmin = smpl_data['bmin'].cuda()  #
             jT = smpl_data['jT'].cuda()
             inv_rootT = smpl_data['inv_rootT'].cuda()
             
@@ -592,6 +593,8 @@ def train(opt):
             idx_list[i] = root
     gt_lbs_smpl = gt_lbs_smpl[None].permute(0,2,1)
     # 用vitruvian pose(姿态)对 Tpose_minimal_v smpl 进行 skinning，输出 vitruvian smpl 的顶点 [1,6890,3]
+    # body_neutral_v 使得 smpl 不考虑体型的影响，而采用标准的模板
+    # smpl_vitruvian 用来对 igr 和 fwd 进行坐标系范围限定，bbox_min,bbox_max
     smpl_vitruvian = model.initiate_vitruvian(device = cuda, 
                                             body_neutral_v = train_dataset.Tpose_minimal_v,  # tpose smpl vertice [N,3]，架空 beta 的影响
                                             vitruvian_angle=opt['data']['vitruvian_angle'])

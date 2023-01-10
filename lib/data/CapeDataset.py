@@ -71,7 +71,7 @@ def load_trimesh(ply_files, ground_level = None):
             if tmp_mesh.vertices[:,1].max() - tmp_mesh.vertices[:,1].min() > 10: # Not in meter, very likely in milimeter
                 tmp_mesh.vertices /= 1000.0
             # meshs[key_name] = trimesh.intersections.slice_mesh_plane(tmp_mesh, (0,1,0), ground_level)
-            # meshs[key_name].export("old_slice.ply")
+            # meshs[key_name].export("old_slice.ply")   # 截取地面以上的形状，地面高度由 ground level 指定
             meshs[key_name] = slice_mesh_plane_with_mesh_color(tmp_mesh, (0,1,0), ground_level)
         else:
             meshs[key_name] = trimesh.load(f, process=False)
@@ -160,7 +160,7 @@ class CapeDataset_scan(Dataset): # Single subject under data directory!
         if self.g_mesh_dic is None and self.is_train:
             logging.info('loading meshes') # 读取训练集的扫描文件，加入全局列表
             self.g_mesh_dic = load_trimesh(ply_data_list, ground_level = self.ground_level)
-            self.g_flag_tri = self.compute_convex()
+            self.g_flag_tri = self.compute_convex()  #
 
         self.g_sample_dic = {}
         self.resample_flag = True
